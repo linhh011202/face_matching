@@ -1,0 +1,21 @@
+.venv
+.git
+.gitignore
+.ruff_cache
+__pycache__
+*.pyc
+*.pyo
+*.egg-info
+.vscode
+README.md
+
+# Secrets — never bake these into the image
+config.yaml
+firebase_credentials.json
+
+# Local data and temp files
+data/
+/tmp/
+
+# Tests
+tests/

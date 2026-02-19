@@ -1,0 +1,58 @@
+name: CI
+
+on:
+   push:
+      branches: [main]
+   pull_request:
+      branches: [main]
+   workflow_call:
+
+jobs:
+   lint:
+      name: Lint
+      runs-on: ubuntu-latest
+      steps:
+         - uses: actions/checkout@v4
+
+         - name: Install uv
+           uses: astral-sh/setup-uv@v5
+
+         - name: Set up Python
+           uses: actions/setup-python@v5
+           with:
+              python-version: "3.12"
+
+         - name: Install dependencies
+           run: uv sync --frozen --dev
+
+         - name: Create dummy config for lint
+           run: |
+              cat > config.yaml << 'EOF'
+              project_name: "face_matching"
+              database:
+                user: "test"
+                password: "test"
+                db: "test"
+                host: "localhost"
+                port: 5432
+              gcp:
+                project_id: "test-project"
+              pubsub:
+                subscription: "test-sub"
+                max_messages: 10
+                ack_deadline_seconds: 600
+              firebase:
+                credentials_path: "firebase_credentials.json"
+                bucket_name: "test-bucket.appspot.com"
+              embedding:
+                model_name: "ArcFace"
+                detector_backend: "retinaface"
+                vector_dimension: 512
+              temp_dir: "/tmp/face_matching"
+              EOF
+
+         - name: Ruff check
+           run: uv run ruff check .
+
+         - name: Ruff format check
+           run: uv run ruff format --check .

@@ -1,0 +1,103 @@
+name: Deploy to GKE
+
+on:
+  push:
+    branches: [main]
+
+env:
+  PROJECT_ID: banking-ekyc-487718
+  REGION: us-central1
+  REPOSITORY: face-matching
+  IMAGE_NAME: face-matching
+  CLUSTER_NAME: banking-ekyc-cluster
+
+jobs:
+  ci:
+    name: CI
+    uses: ./.github/workflows/ci.yml
+
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    needs: ci
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/884304521920/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+          service_account: github-deployer@banking-ekyc-487718.iam.gserviceaccount.com
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          install_components: 'gke-gcloud-auth-plugin'
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+
+      - name: Create Artifact Registry repository (if not exists)
+        run: |
+          gcloud artifacts repositories create ${{ env.REPOSITORY }} \
+            --repository-format=docker \
+            --location=${{ env.REGION }} \
+            --project=${{ env.PROJECT_ID }} \
+            --quiet 2>/dev/null || true
+
+      - name: Fetch Firebase Credentials from Secret Manager
+        run: |
+          gcloud secrets versions access latest \
+            --secret=firebase-credentials \
+            --project=${{ env.PROJECT_ID }} > firebase_credentials.json
+
+      - name: Write config from GitHub Secret
+        env:
+          CONFIG_CONTENT: ${{ secrets.APPLICATION_CONFIG }}
+        run: |
+          printf '%s\n' "$CONFIG_CONTENT" > config.yaml
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and Push Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+            ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE_NAME }}:latest
+          # Cache layers in GitHub Actions cache (speeds up TF/model re-builds)
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Deploy to GKE
+        run: |
+          # Configure kubectl
+          gcloud container clusters get-credentials ${{ env.CLUSTER_NAME }} \
+            --region ${{ env.REGION }} \
+            --project ${{ env.PROJECT_ID }}
+
+          # Create/update K8s secret with config and credentials
+          kubectl create secret generic face-matching-secrets \
+            --from-file=config.yaml=config.yaml \
+            --from-file=firebase_credentials.json=firebase_credentials.json \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+          # Get K8s manifests from the GKE config repo
+          git clone https://github.com/linhh011202/gke_banking_ekyc.git k8s-config
+
+          # Update the image tag in the deployment manifest
+          IMAGE=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          sed -i "s|image: .*face-matching.*|image: $IMAGE|g" k8s-config/face-matching-deployment.yaml
+
+          # Apply deployment
+          kubectl apply -f k8s-config/face-matching-deployment.yaml
+
+          # Wait for rollout
+          kubectl rollout status deployment/face-matching --timeout=300s
