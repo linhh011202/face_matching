@@ -1,0 +1,35 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Credentials & secrets — NEVER commit these
+firebase_credentials.json
+*.key
+*.pem
+.env
+.env.*
+
+# Local config — contains passwords/API keys
+# Commit config.yaml.example instead
+config.yaml
+
+# Generated / local data
+data/references.json
+data/models/
+
+# Temp downloaded images
+/tmp/face_matching/
+
+# Logs
+*.log
+
+# IDE
+.vscode/
+.idea/

@@ -1,0 +1,22 @@
+[project]
+name = "face-matching"
+version = "0.2.0"
+description = "Face Matching Worker — PubSub subscriber for eKYC embedding generation"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+   "deepface>=0.0.98",
+   "tf-keras>=2.20.1",
+   "tensorflow[and-cuda]>=2.20.0",
+   "scikit-learn>=1.5.0",
+   "google-cloud-pubsub>=2.35.0",
+   "firebase-admin>=6.5.0",
+   "psycopg2-binary>=2.9.11",
+   "sqlalchemy>=2.0.0",
+   "sqlmodel>=0.0.31",
+   "pgvector>=0.3.0",
+   "pyyaml>=6.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["app*"]
