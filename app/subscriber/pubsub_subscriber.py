@@ -107,9 +107,9 @@ class PubSubSubscriber:
 
         logger.info("PubSub subscriber is running. Waiting for messages...")
         print("=" * 60)
-        print(f"  Face Matching Worker")
+        print("  Face Matching Worker")
         print(f"  Listening on: {self._subscription_path}")
-        print(f"  Press Ctrl+C to stop")
+        print("  Press Ctrl+C to stop")
         print("=" * 60)
 
         try:

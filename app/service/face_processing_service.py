@@ -1,6 +1,5 @@
 import logging
 
-from app.model.user_face_model import UserFaceModel
 from app.repository.user_face_repository import UserFaceRepository
 from app.service.embedding_service import EmbeddingService
 from app.service.storage_service import StorageService

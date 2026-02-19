@@ -37,17 +37,17 @@ if _ssl_path:
     ctypes.CDLL(_ssl_path, mode=ctypes.RTLD_GLOBAL)
 # ──────────────────────────────────────────────────────────────
 
-import argparse
-import logging
-import sys
+import argparse  # noqa: E402
+import logging  # noqa: E402
+import sys  # noqa: E402
 
-from app.core.config import configs
-from app.core.database import Database
-from app.repository.user_face_repository import UserFaceRepository
-from app.service.embedding_service import EmbeddingService
-from app.service.storage_service import StorageService
-from app.service.face_processing_service import FaceProcessingService
-from app.service.matching_service import (
+from app.core.config import configs  # noqa: E402
+from app.core.database import Database  # noqa: E402
+from app.repository.user_face_repository import UserFaceRepository  # noqa: E402
+from app.service.embedding_service import EmbeddingService  # noqa: E402
+from app.service.storage_service import StorageService  # noqa: E402
+from app.service.face_processing_service import FaceProcessingService  # noqa: E402
+from app.service.matching_service import (  # noqa: E402
     MODELS,
     CLASSIFIER_WEIGHT,
     ensure_dirs,
@@ -55,7 +55,7 @@ from app.service.matching_service import (
     cmd_retrain,
     cmd_enroll,
 )
-from app.subscriber.pubsub_subscriber import PubSubSubscriber
+from app.subscriber.pubsub_subscriber import PubSubSubscriber  # noqa: E402
 
 logging.basicConfig(
     level=logging.INFO,
