@@ -1,13 +1,13 @@
 """
 Personalized Classifier
 ========================
-Lightweight binary classifier (SGDClassifier) học personalized decision boundary.
+Lightweight binary classifier (SGDClassifier) that learns a personalized decision boundary.
 
-- Input: concatenated embeddings từ tất cả models
+- Input: concatenated embeddings from all models
 - Output: probability of match (0.0 → 1.0)
-- Dùng SGD để có thể incremental update (partial_fit) khi có data mới
+- Uses SGD for incremental updates (partial_fit) when new data arrives
 
-Tạo negative samples bằng cách perturbation (thêm noise) vào positive embeddings.
+Generates negative samples via perturbation (adding noise) to positive embeddings.
 """
 
 import logging
@@ -28,7 +28,7 @@ class PersonalizedClassifier:
         self.model_path = model_path or os.path.join(DATA_DIR, "classifier.pkl")
         self.scaler = StandardScaler()
         self.clf = SGDClassifier(
-            loss="modified_huber",  # cho phép predict_proba
+            loss="modified_huber",  # enables predict_proba
             max_iter=1000,
             random_state=42,
             class_weight="balanced",
@@ -39,15 +39,15 @@ class PersonalizedClassifier:
         self, positive_features: np.ndarray, n_negatives: int = 50
     ) -> np.ndarray:
         """
-        Tạo negative samples bằng perturbation mạnh.
-        Thêm noise lớn để mô phỏng người khác.
+        Generate negative samples via strong perturbation.
+        Adds large noise to simulate a different person.
         """
         rng = np.random.default_rng(42)
         negatives = []
         for _ in range(n_negatives):
             idx = rng.integers(0, len(positive_features))
             base = positive_features[idx].copy()
-            # Noise mạnh để tạo "người khác"
+            # Strong noise to simulate "a different person"
             noise = rng.normal(0, 0.3, size=base.shape)
             neg = base + noise
             neg = neg / np.linalg.norm(neg)
@@ -55,9 +55,9 @@ class PersonalizedClassifier:
         return np.array(negatives)
 
     def train(self, positive_features: np.ndarray):
-        """Train classifier từ positive embeddings (reference images)."""
+        """Train the classifier from positive embeddings (reference images)."""
         if len(positive_features) < 2:
-            print("  [classifier] Cần ít nhất 2 reference images để train.")
+            print("  [classifier] At least 2 reference images are required to train.")
             return
 
         neg_features = self._generate_negative_samples(positive_features)
@@ -65,7 +65,7 @@ class PersonalizedClassifier:
         features = np.vstack([positive_features, neg_features])
         labels = np.array([1] * len(positive_features) + [0] * len(neg_features))
 
-        # Chuẩn hoá features
+        # Normalise features
         features_scaled = self.scaler.fit_transform(features)
 
         self.clf.fit(features_scaled, labels)
@@ -73,15 +73,15 @@ class PersonalizedClassifier:
 
         # Training accuracy
         acc = self.clf.score(features_scaled, labels)
-        print(f"  [classifier] Đã train — accuracy: {acc:.2%}")
+        print(f"  [classifier] Trained — accuracy: {acc:.2%}")
 
     def partial_update(self, positive_features: np.ndarray):
         """
-        Online update: incremental learning với ảnh mới (partial_fit).
-        Không cần retrain toàn bộ — chỉ cập nhật weights.
+        Online update: incremental learning with new images (partial_fit).
+        No full retrain needed — only weights are updated.
         """
         if not self.is_trained:
-            print("  [classifier] Chưa có model, train đầy đủ trước.")
+            print("  [classifier] No model found, run full training first.")
             self.train(positive_features)
             return
 
@@ -91,22 +91,24 @@ class PersonalizedClassifier:
 
         features_scaled = self.scaler.transform(features)
         self.clf.partial_fit(features_scaled, labels)
-        print(f"  [classifier] Online update với {len(positive_features)} ảnh mới")
+        print(
+            f"  [classifier] Online update with {len(positive_features)} new image(s)"
+        )
 
     def predict_score(self, features: np.ndarray) -> float:
         """
-        Trả về confidence score (0.0 → 1.0).
-        Score cao → khả năng match cao.
-        Trả về 1 - confidence để dùng như distance (thấp = match).
+        Returns a confidence score (0.0 → 1.0).
+        High score → higher match probability.
+        Returns 1 - confidence to use as distance (low = match).
         """
         if not self.is_trained:
-            return 0.5  # neutral nếu chưa train
+            return 0.5  # neutral if not yet trained
 
         features_scaled = self.scaler.transform(features.reshape(1, -1))
         proba = self.clf.predict_proba(features_scaled)[0]
         # proba[1] = probability of class 1 (match)
         match_prob = proba[1] if len(proba) > 1 else proba[0]
-        # Chuyển thành distance-like score (0 = match, 1 = not match)
+        # Convert to distance-like score (0 = match, 1 = not match)
         return float(1.0 - match_prob)
 
     def save(self):
@@ -114,7 +116,7 @@ class PersonalizedClassifier:
             pickle.dump(
                 {"scaler": self.scaler, "clf": self.clf, "trained": self.is_trained}, f
             )
-        print(f"  => Đã lưu classifier → {self.model_path}")
+        print(f"  => Classifier saved → {self.model_path}")
 
     def load(self) -> bool:
         if not os.path.exists(self.model_path):
@@ -124,5 +126,5 @@ class PersonalizedClassifier:
         self.scaler = data["scaler"]
         self.clf = data["clf"]
         self.is_trained = data["trained"]
-        print(f"  => Đã load classifier từ {self.model_path}")
+        print(f"  => Classifier loaded from {self.model_path}")
         return True

@@ -11,8 +11,12 @@ wheels/
 
 # Credentials & secrets — NEVER commit these
 firebase_credentials.json
+*credentials*.json
+*service_account*.json
 *.key
 *.pem
+*.p12
+*.pfx
 .env
 .env.*
 

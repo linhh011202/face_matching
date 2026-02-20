@@ -1,13 +1,13 @@
 """
 Face Matching - Enhanced Ensemble Approach
 ==========================================
-Kết hợp nhiều kỹ thuật để matching chính xác hơn, đặc biệt khi khuôn mặt
-thay đổi theo thời gian:
+Combines multiple techniques for more accurate matching, especially as face appearance
+changes over time:
 
 1. Dual-Model Ensemble: ArcFace + Facenet512
-2. Multi-Reference: Lưu từng embedding thay vì chỉ average vector
-3. Lightweight Classifier: sklearn SGDClassifier cho personalized decision boundary
-4. Adaptive Update: Có thể cập nhật reference embeddings theo thời gian
+2. Multi-Reference: Stores individual embeddings instead of just an average vector
+3. Lightweight Classifier: sklearn SGDClassifier for personalized decision boundary
+4. Adaptive Update: Reference embeddings can be updated over time
 
 Final Score = 0.5 * arcface_score + 0.3 * facenet_score + 0.2 * classifier_score
 """
@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 CLASSIFIER_WEIGHT = 0.2  # weight cho sklearn classifier score
 DETECTOR_BACKEND = "retinaface"
-FINAL_THRESHOLD = 0.50  # ngưỡng quyết định cuối cùng (score < threshold → MATCH)
+FINAL_THRESHOLD = 0.50  # final decision threshold (score < threshold → MATCH)
 
 VECTOR_DIR = "image/vector"
 TEST_DIR = "image/test"
@@ -40,12 +40,12 @@ TEST_DIR = "image/test"
 
 
 def ensure_dirs():
-    """Tạo thư mục data nếu chưa có."""
+    """Create the data directory if it does not exist."""
     Path(DATA_DIR).mkdir(parents=True, exist_ok=True)
 
 
 def get_embedding(img_path: str, model_name: str) -> np.ndarray:
-    """Trích xuất face embedding từ ảnh bằng model chỉ định."""
+    """Extract face embedding from an image using the specified model."""
     result = DeepFace.represent(
         img_path=img_path,
         model_name=model_name,
@@ -53,12 +53,12 @@ def get_embedding(img_path: str, model_name: str) -> np.ndarray:
         enforce_detection=True,
     )
     emb = np.array(result[0]["embedding"])
-    # Chuẩn hoá L2
+    # L2 normalise
     return emb / np.linalg.norm(emb)
 
 
 def get_multi_model_embeddings(img_path: str) -> dict[str, np.ndarray]:
-    """Trích xuất embeddings từ tất cả models cho 1 ảnh."""
+    """Extract embeddings from all models for a single image."""
     embeddings = {}
     for model_name in MODELS:
         embeddings[model_name] = get_embedding(img_path, model_name)
@@ -74,14 +74,14 @@ def compute_final_score(
     test_embeddings: dict[str, np.ndarray],
 ) -> dict:
     """
-    Tính điểm tổng hợp từ ensemble.
+    Compute the ensemble final score.
 
-    Returns dict với chi tiết từng model score + final score.
+    Returns a dict with per-model score details + final score.
     """
     details = {}
     weighted_sum = 0.0
 
-    # Distance scores từ từng model
+    # Distance score from each model
     for model_name, config in MODELS.items():
         dist = ref_store.compute_distance(model_name, test_embeddings[model_name])
         weighted_sum += config["weight"] * dist
@@ -111,38 +111,38 @@ def compute_final_score(
 
 
 def build_references(ref_store: ReferenceStore):
-    """Bước 1: Xây dựng reference embeddings từ ảnh vector."""
+    """Step 1: Build reference embeddings from vector images."""
     if ref_store.load():
-        print(f"\n[1] Đã load {ref_store.count()} reference embeddings từ cache")
+        print(f"\n[1] Loaded {ref_store.count()} reference embeddings from cache")
         return
 
-    print(f"\n[1] Trích xuất reference embeddings từ '{VECTOR_DIR}':")
+    print(f"\n[1] Extracting reference embeddings from '{VECTOR_DIR}':")
     for filename in sorted(os.listdir(VECTOR_DIR)):
         filepath = os.path.join(VECTOR_DIR, filename)
         if not os.path.isfile(filepath):
             continue
-        print(f"  [ref] Đang xử lý: {filename}")
+        print(f"  [ref] Processing: {filename}")
         try:
             embs = get_multi_model_embeddings(filepath)
             for model_name, emb in embs.items():
                 ref_store.add(model_name, emb)
         except Exception as e:
-            print(f"  [ref] Lỗi với {filename}: {e}")
+            print(f"  [ref] Error with {filename}: {e}")
 
     if ref_store.count() == 0:
-        raise RuntimeError("Không trích xuất được embedding nào!")
+        raise RuntimeError("No embeddings could be extracted!")
 
     print(
-        f"  => Đã trích xuất embeddings từ {ref_store.count()} ảnh "
-        f"× {len(MODELS)} models"
+        f"  => Extracted embeddings from {ref_store.count()} image(s)"
+        f" × {len(MODELS)} models"
     )
     ref_store.save()
 
 
 def build_classifier(classifier: PersonalizedClassifier, ref_store: ReferenceStore):
-    """Bước 2: Train hoặc load personalized classifier."""
+    """Step 2: Train or load the personalized classifier."""
     if classifier.load():
-        print("\n[2] Đã load classifier từ cache")
+        print("\n[2] Loaded classifier from cache")
         return
 
     print("\n[2] Train personalized classifier:")
@@ -152,7 +152,7 @@ def build_classifier(classifier: PersonalizedClassifier, ref_store: ReferenceSto
 
 
 def print_result(result: dict):
-    """In chi tiết kết quả matching."""
+    """Print detailed matching result."""
     for model_name in MODELS:
         d = result[model_name]
         m = "✓" if d["match"] else "✗"
@@ -170,12 +170,12 @@ def print_result(result: dict):
     print(
         f"    Final Score : {result['final_score']:.4f} (threshold: {FINAL_THRESHOLD})"
     )
-    print(f"    Kết quả     : {status}")
+    print(f"    Result       : {status}")
 
 
 def run_tests(ref_store: ReferenceStore, classifier: PersonalizedClassifier):
-    """Bước 3: Test matching."""
-    print(f"\n[3] Kiểm tra face matching trong '{TEST_DIR}':")
+    """Step 3: Test matching."""
+    print(f"\n[3] Testing face matching in '{TEST_DIR}':")
     print("-" * 60)
 
     for filename in sorted(os.listdir(TEST_DIR)):
@@ -188,14 +188,14 @@ def run_tests(ref_store: ReferenceStore, classifier: PersonalizedClassifier):
             result = compute_final_score(ref_store, classifier, test_embs)
             print_result(result)
         except Exception as e:
-            print(f"    Lỗi: {e}")
+            print(f"    Error: {e}")
 
 
 # ── CLI Commands ─────────────────────────────────────────────
 
 
 def cmd_match():
-    """Lệnh mặc định: build references, train classifier, test matching."""
+    """Default command: build references, train classifier, test matching."""
     ref_store = ReferenceStore()
     classifier = PersonalizedClassifier()
 
@@ -206,41 +206,41 @@ def cmd_match():
 
 def cmd_retrain():
     """
-    Train your own model: Xoá cache cũ, trích xuất lại embeddings từ
-    image/vector/ và train classifier từ đầu.
-    Dùng khi thêm/xoá nhiều ảnh reference hoặc muốn reset.
+    Train your own model: clears the old cache, re-extracts embeddings from
+    image/vector/, and trains the classifier from scratch.
+    Use when adding/removing many reference images or when a full reset is needed.
     """
-    print("\n[retrain] Xoá cache cũ và train lại từ đầu...")
+    print("\n[retrain] Clearing old cache and retraining from scratch...")
     for fname in ("references.json", "classifier.pkl"):
         fpath = os.path.join(DATA_DIR, fname)
         if os.path.exists(fpath):
             os.remove(fpath)
-            print(f"  Đã xoá {fpath}")
+            print(f"  Removed {fpath}")
 
     ref_store = ReferenceStore()
     classifier = PersonalizedClassifier()
 
     build_references(ref_store)
     build_classifier(classifier, ref_store)
-    print("\n[retrain] Hoàn tất — model đã được train lại.")
+    print("\n[retrain] Done — model has been retrained.")
 
 
 def cmd_enroll(image_paths: list[str]):
     """
-    Online model updating: Thêm ảnh mới vào reference store và
-    incremental update classifier (partial_fit) mà không cần retrain toàn bộ.
+    Online model updating: adds new images to the reference store and
+    incrementally updates the classifier (partial_fit) without a full retrain.
 
-    Dùng khi user thêm 1-2 ảnh mới (ví dụ: ảnh chụp hôm nay) để model
-    thích nghi với thay đổi khuôn mặt theo thời gian.
+    Use when a user enrolls 1-2 new images (e.g. a photo taken today) so the
+    model adapts to gradual appearance changes over time.
     """
     ref_store = ReferenceStore()
     classifier = PersonalizedClassifier()
 
     if not ref_store.load():
-        print("[enroll] Chưa có reference store. Chạy 'match' hoặc 'retrain' trước.")
+        print("[enroll] No reference store found. Run 'match' or 'retrain' first.")
         return
     if not classifier.load():
-        print("[enroll] Chưa có classifier. Chạy 'match' hoặc 'retrain' trước.")
+        print("[enroll] No classifier found. Run 'match' or 'retrain' first.")
         return
 
     old_count = ref_store.count()
@@ -248,20 +248,20 @@ def cmd_enroll(image_paths: list[str]):
 
     for img_path in image_paths:
         if not os.path.isfile(img_path):
-            print(f"  [enroll] File không tồn tại: {img_path}")
+            print(f"  [enroll] File not found: {img_path}")
             continue
-        print(f"  [enroll] Đang xử lý: {img_path}")
+        print(f"  [enroll] Processing: {img_path}")
         try:
             ref_store.enroll(img_path, get_multi_model_embeddings)
-            # Lấy concatenated embedding cho classifier update
+            # Get concatenated embedding for classifier update
             embs = {m: ref_store.references[m][-1] for m in MODELS}
             concat = np.concatenate([embs[m] for m in MODELS])
             new_features.append(concat)
         except Exception as e:
-            print(f"  [enroll] Lỗi: {e}")
+            print(f"  [enroll] Error: {e}")
 
     if not new_features:
-        print("[enroll] Không có ảnh nào được thêm.")
+        print("[enroll] No images were added.")
         return
 
     # Incremental update classifier (partial_fit)
@@ -271,6 +271,6 @@ def cmd_enroll(image_paths: list[str]):
     ref_store.save()
     classifier.save()
 
-    print(f"\n[enroll] Đã thêm {ref_store.count() - old_count} ảnh mới ")
+    print(f"\n[enroll] Added {ref_store.count() - old_count} new image(s)")
     print(f"  References: {old_count} → {ref_store.count()}")
-    print("  Classifier đã được cập nhật (online update).")
+    print("  Classifier updated (online update).")
