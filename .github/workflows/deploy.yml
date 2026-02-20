@@ -92,12 +92,15 @@ jobs:
           # Get K8s manifests from the GKE config repo
           git clone https://github.com/linhh011202/gke_banking_ekyc.git k8s-config
 
-          # Update the image tag in the deployment manifest
+          # Update the image tag in both deployment manifests
           IMAGE=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
-          sed -i "s|image: .*face-matching.*|image: $IMAGE|g" k8s-config/face-matching-deployment.yaml
+          sed -i "s|image: .*face-matching.*|image: $IMAGE|g" k8s-config/face-matching-signup-deployment.yaml
+          sed -i "s|image: .*face-matching.*|image: $IMAGE|g" k8s-config/face-matching-signin-deployment.yaml
 
-          # Apply deployment
-          kubectl apply -f k8s-config/face-matching-deployment.yaml
+          # Apply both deployments
+          kubectl apply -f k8s-config/face-matching-signup-deployment.yaml
+          kubectl apply -f k8s-config/face-matching-signin-deployment.yaml
 
-          # Wait for rollout
-          kubectl rollout status deployment/face-matching --timeout=300s
+          # Wait for both rollouts
+          kubectl rollout status deployment/face-matching-signup --timeout=300s
+          kubectl rollout status deployment/face-matching-signin --timeout=300s

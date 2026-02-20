@@ -1,4 +1,5 @@
 import logging
+import uuid
 
 from app.repository.user_face_repository import UserFaceRepository
 from app.service.embedding_service import EmbeddingService
@@ -22,33 +23,33 @@ class FaceProcessingService:
         embedding_service: EmbeddingService,
         storage_service: StorageService,
     ) -> None:
-        self._repo = user_face_repository
+        self._face_repo = user_face_repository
         self._embedding_svc = embedding_service
         self._storage_svc = storage_service
         logger.info("FaceProcessingService initialized")
 
-    def process_user(self, email: str) -> bool:
+    def process_user(self, user_id: uuid.UUID) -> bool:
         """
         Process all face records for a user — download images, extract
         embeddings, and store them in the database.
 
         Args:
-            email: User's email address (from PubSub message).
+            user_id: User's UUID (from PubSub message).
 
         Returns:
             True if at least one embedding was stored successfully.
         """
-        logger.info(f"Processing face embeddings for user: {email}")
+        logger.info(f"Processing face embeddings for user_id: {user_id}")
 
         # Check if embeddings already exist
-        if self._repo.check_embeddings_exist(email):
-            logger.info(f"Embeddings already exist for user: {email}, skipping")
+        if self._face_repo.check_embeddings_exist(user_id):
+            logger.info(f"Embeddings already exist for user_id: {user_id}, skipping")
             return True
 
         # Get face records from DB
-        faces = self._repo.get_faces_by_email(email)
+        faces = self._face_repo.get_faces_by_user_id(user_id)
         if not faces:
-            logger.warning(f"No face records found for user: {email}")
+            logger.warning(f"No face records found for user_id: {user_id}")
             return False
 
         success_count = 0
@@ -88,7 +89,7 @@ class FaceProcessingService:
 
             # Step 3: Store embedding in DB
             embedding_list = embedding.tolist()
-            if self._repo.update_embedding(face_id, embedding_list):
+            if self._face_repo.update_embedding(face_id, embedding_list):
                 success_count += 1
                 logger.info(
                     f"Stored embedding for face_id={face_id} pose={pose} "
@@ -103,7 +104,7 @@ class FaceProcessingService:
         self._storage_svc.cleanup_files(total_downloaded)
 
         logger.info(
-            f"Completed processing for user {email}: "
+            f"Completed processing for user_id {user_id}: "
             f"{success_count}/{len(faces)} embeddings stored"
         )
         return success_count > 0

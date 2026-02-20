@@ -46,9 +46,12 @@ class Configs:
     )
 
     # PubSub
-    PUBSUB_SUBSCRIPTION: str = os.environ.get("PUBSUB_SUBSCRIPTION") or _raw.get(
-        "pubsub", {}
-    ).get("subscription", "")
+    PUBSUB_SIGNUP_SUBSCRIPTION: str = os.environ.get(
+        "PUBSUB_SIGNUP_SUBSCRIPTION"
+    ) or _raw.get("pubsub", {}).get("signup_subscription", "")
+    PUBSUB_SIGNIN_SUBSCRIPTION: str = os.environ.get(
+        "PUBSUB_SIGNIN_SUBSCRIPTION"
+    ) or _raw.get("pubsub", {}).get("signin_subscription", "")
     PUBSUB_MAX_MESSAGES: int = int(
         os.environ.get("PUBSUB_MAX_MESSAGES")
         or _raw.get("pubsub", {}).get("max_messages", 10)
@@ -85,10 +88,12 @@ class Configs:
         )
 
     @property
-    def SUBSCRIPTION_PATH(self) -> str:
-        return (
-            f"projects/{self.GCP_PROJECT_ID}/subscriptions/{self.PUBSUB_SUBSCRIPTION}"
-        )
+    def SIGNUP_SUBSCRIPTION_PATH(self) -> str:
+        return f"projects/{self.GCP_PROJECT_ID}/subscriptions/{self.PUBSUB_SIGNUP_SUBSCRIPTION}"
+
+    @property
+    def SIGNIN_SUBSCRIPTION_PATH(self) -> str:
+        return f"projects/{self.GCP_PROJECT_ID}/subscriptions/{self.PUBSUB_SIGNIN_SUBSCRIPTION}"
 
 
 configs = Configs()

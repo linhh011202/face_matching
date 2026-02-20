@@ -1,24 +1,29 @@
 """
 Face Matching
 =============
-Two modes of operation:
+Three modes of operation:
 
-1. PubSub Worker (default):
+1. PubSub Sign-Up Worker:
    Subscribes to 'banking-ekyc-sign-up' topic. When identity_service publishes
-   a 'user_ekyc_completed' event → downloads images → extracts 512-dim ArcFace
+   a 'sign_up' event → downloads images → extracts 512-dim ArcFace
    embeddings → stores into tb_user_faces.embedding (pgvector).
 
-2. Local Matching (Enhanced Ensemble):
+2. PubSub Sign-In Worker:
+   Subscribes to 'banking-ekyc-sign-in' topic. When identity_service publishes
+   a 'sign_in' event → retrieves login face (pose='login') → compares against
+   registered embeddings → prints MATCH or NOT MATCH.
+
+3. Local Matching (Enhanced Ensemble):
    Dual-Model ensemble (ArcFace + Facenet512) + SGDClassifier.
    Build references from local images, train classifier, test matching.
 
 Usage:
-    python -m app.main                             # Start PubSub subscriber worker
-    python -m app.main worker                      # Same — start subscriber
-    python -m app.main process <email>             # Manually process a single user
-    python -m app.main match                       # Local ensemble matching
-    python -m app.main retrain                     # Retrain local model from scratch
-    python -m app.main enroll img1.jpg img2.jpg    # Add images + online update
+    python -m app.main worker-signup                   # Start sign-up subscriber
+    python -m app.main worker-signin                   # Start sign-in subscriber
+    python -m app.main process <email>                 # Manually process a single user
+    python -m app.main match                           # Local ensemble matching
+    python -m app.main retrain                         # Retrain local model from scratch
+    python -m app.main enroll img1.jpg img2.jpg        # Add images + online update
 """
 
 # ── CRITICAL: Pre-load system OpenSSL ─────────────────────────
@@ -47,6 +52,7 @@ from app.repository.user_face_repository import UserFaceRepository  # noqa: E402
 from app.service.embedding_service import EmbeddingService  # noqa: E402
 from app.service.storage_service import StorageService  # noqa: E402
 from app.service.face_processing_service import FaceProcessingService  # noqa: E402
+from app.service.face_verification_service import FaceVerificationService  # noqa: E402
 from app.service.matching_service import (  # noqa: E402
     MODELS,
     CLASSIFIER_WEIGHT,
@@ -55,7 +61,8 @@ from app.service.matching_service import (  # noqa: E402
     cmd_retrain,
     cmd_enroll,
 )
-from app.subscriber.pubsub_subscriber import PubSubSubscriber  # noqa: E402
+from app.subscriber.signup_subscriber import SignUpSubscriber  # noqa: E402
+from app.subscriber.signin_subscriber import SignInSubscriber  # noqa: E402
 
 logging.basicConfig(
     level=logging.INFO,
@@ -68,36 +75,57 @@ logger = logging.getLogger(__name__)
 # ── PubSub Worker Commands ───────────────────────────────────
 
 
-def _build_services() -> tuple[FaceProcessingService, Database]:
-    """Wire up all dependencies for PubSub worker."""
+def _build_services() -> tuple[
+    FaceProcessingService, FaceVerificationService, Database
+]:
+    """Wire up all dependencies for PubSub workers."""
     db = Database(db_url=configs.DATABASE_URL)
-    repo = UserFaceRepository(session_factory=db.session)
+    face_repo = UserFaceRepository(session_factory=db.session)
     embedding_svc = EmbeddingService()
     storage_svc = StorageService()
     face_processing_svc = FaceProcessingService(
-        user_face_repository=repo,
+        user_face_repository=face_repo,
         embedding_service=embedding_svc,
         storage_service=storage_svc,
     )
-    return face_processing_svc, db
+    face_verification_svc = FaceVerificationService(
+        user_face_repository=face_repo,
+        storage_service=storage_svc,
+    )
+    return face_processing_svc, face_verification_svc, db
 
 
-def cmd_worker():
-    """Start PubSub subscriber — listens for eKYC completed events."""
-    face_processing_svc, _ = _build_services()
-    subscriber = PubSubSubscriber(face_processing_service=face_processing_svc)
+def cmd_worker_signup():
+    """Start sign-up subscriber — listens for sign_up events."""
+    face_processing_svc, _, _ = _build_services()
+    subscriber = SignUpSubscriber(face_processing_service=face_processing_svc)
     subscriber.start()
 
 
-def cmd_process(email: str):
-    """Manually trigger face processing for a user by email."""
-    face_processing_svc, _ = _build_services()
-    logger.info(f"Manually processing user: {email}")
-    success = face_processing_svc.process_user(email)
+def cmd_worker_signin():
+    """Start sign-in subscriber — listens for sign_in events."""
+    _, face_verification_svc, _ = _build_services()
+    subscriber = SignInSubscriber(face_verification_service=face_verification_svc)
+    subscriber.start()
+
+
+def cmd_process(user_id_str: str):
+    """Manually trigger face processing for a user by user_id."""
+    import uuid as _uuid
+
+    try:
+        user_id = _uuid.UUID(user_id_str)
+    except ValueError:
+        logger.error(f"Invalid user_id format: {user_id_str}")
+        return False
+
+    face_processing_svc, _, _ = _build_services()
+    logger.info(f"Manually processing user_id: {user_id}")
+    success = face_processing_svc.process_user(user_id)
     if success:
-        logger.info(f"Successfully processed embeddings for: {email}")
+        logger.info(f"Successfully processed embeddings for user_id: {user_id}")
     else:
-        logger.error(f"Failed to process embeddings for: {email}")
+        logger.error(f"Failed to process embeddings for user_id: {user_id}")
     return success
 
 
@@ -106,24 +134,25 @@ def cmd_process(email: str):
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Face Matching — PubSub worker & local ensemble matching",
+        description="Face Matching — PubSub workers & local ensemble matching",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python -m app.main                             # Start PubSub subscriber worker
-  python -m app.main worker                      # Same as above
-  python -m app.main process user@email.com      # Manually process a single user
-  python -m app.main match                       # Local ensemble matching
-  python -m app.main retrain                     # Retrain local model from scratch
-  python -m app.main enroll img1.jpg img2.jpg    # Add images + online update
+  python -m app.main worker-signup                 # Start sign-up subscriber
+  python -m app.main worker-signin                 # Start sign-in subscriber
+  python -m app.main process <user_id>            # Manually process a single user
+  python -m app.main match                         # Local ensemble matching
+  python -m app.main retrain                       # Retrain local model from scratch
+  python -m app.main enroll img1.jpg img2.jpg      # Add images + online update
 """,
     )
     sub = parser.add_subparsers(dest="command")
 
-    sub.add_parser("worker", help="Start PubSub subscriber (default)")
+    sub.add_parser("worker-signup", help="Start sign-up PubSub subscriber")
+    sub.add_parser("worker-signin", help="Start sign-in PubSub subscriber")
 
-    process_p = sub.add_parser("process", help="Manually process a user by email")
-    process_p.add_argument("email", help="User email to process")
+    process_p = sub.add_parser("process", help="Manually process a user by user_id")
+    process_p.add_argument("user_id", help="User UUID to process")
 
     sub.add_parser("match", help="Local ensemble matching (ArcFace + Facenet512)")
     sub.add_parser("retrain", help="Retrain local model from scratch")
@@ -140,7 +169,12 @@ Examples:
 
 def main():
     args = _parse_args()
-    command = args.command or "worker"
+    command = args.command
+
+    if not command:
+        print("Usage: python -m app.main <command>")
+        print("Commands: worker-signup, worker-signin, process, match, retrain, enroll")
+        return
 
     # Local matching commands
     if command in ("match", "retrain", "enroll"):
@@ -171,10 +205,12 @@ def main():
     print(f"  Database: {configs.POSTGRES_HOST}/{configs.POSTGRES_DB}")
     print("=" * 60)
 
-    if command == "worker":
-        cmd_worker()
+    if command == "worker-signup":
+        cmd_worker_signup()
+    elif command == "worker-signin":
+        cmd_worker_signin()
     elif command == "process":
-        cmd_process(args.email)
+        cmd_process(args.user_id)
 
 
 if __name__ == "__main__":

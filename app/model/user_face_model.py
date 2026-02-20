@@ -14,7 +14,7 @@ class UserFaceModel(SQLModel, table=True):
         default=None,
         sa_column=Column(BigInteger, primary_key=True, autoincrement=True),
     )
-    user_id: uuid.UUID = Field(foreign_key="tb_users.id", nullable=False, index=True)
+    user_id: uuid.UUID = Field(nullable=False, index=True)
 
     embedding: Optional[list[float]] = Field(
         default=None,

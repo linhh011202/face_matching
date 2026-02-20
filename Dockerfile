@@ -50,5 +50,6 @@ ENV CONFIG_PATH="/app/secrets/config.yaml"
 ENV FIREBASE_CREDENTIALS_PATH="/app/secrets/firebase_credentials.json"
 ENV PATH="/app/.venv/bin:$PATH"
 
-# PubSub worker — no HTTP port exposed
-CMD ["python", "-m", "app.main", "worker"]
+# PubSub worker — K8s deployments override this via `command:` field
+# Default to worker-signup for local / docker-compose usage
+CMD ["python", "-m", "app.main", "worker-signup"]

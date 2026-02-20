@@ -2,44 +2,47 @@ import json
 import logging
 import signal
 import sys
+import uuid
 from concurrent.futures import TimeoutError
 
 from google.cloud import pubsub_v1
 
 from app.core.config import configs
-from app.service.face_processing_service import FaceProcessingService
+from app.core.constants import Event
+from app.service.face_verification_service import FaceVerificationService
 
 logger = logging.getLogger(__name__)
 
 
-class PubSubSubscriber:
+class SignInSubscriber:
     """
-    Pull messages from the PubSub subscription 'banking-ekyc-sign-up-sub'.
+    Pull messages from the PubSub subscription for sign-in events.
 
     Expected message format:
         {
-            "event": "user_ekyc_completed",
-            "email": "user@example.com",
-            "timestamp": "2026-02-19T12:00:00+00:00"
+            "event": "sign_in",
+            "user_id": "550e8400-e29b-41d4-a716-446655440000",
+            "session_id": "abc-123",
+            "timestamp": "2026-02-20T12:00:00+00:00"
         }
 
     On receiving a message:
-      1. Parse the email from the message
-      2. Delegate to FaceProcessingService to download images → extract embeddings → store in DB
+      1. Parse the user_id and session_id from the message
+      2. Delegate to FaceVerificationService to verify the login face
       3. ACK or NACK the message based on success/failure
     """
 
-    def __init__(self, face_processing_service: FaceProcessingService) -> None:
-        self._face_processing_svc = face_processing_service
+    def __init__(self, face_verification_service: FaceVerificationService) -> None:
+        self._face_verification_svc = face_verification_service
         self._project_id = configs.GCP_PROJECT_ID
-        self._subscription_id = configs.PUBSUB_SUBSCRIPTION
+        self._subscription_id = configs.PUBSUB_SIGNIN_SUBSCRIPTION
         self._subscriber = pubsub_v1.SubscriberClient()
         self._subscription_path = self._subscriber.subscription_path(
             self._project_id, self._subscription_id
         )
         self._streaming_pull_future = None
         logger.info(
-            f"PubSubSubscriber initialized — subscription: {self._subscription_path}"
+            f"SignInSubscriber initialized — subscription: {self._subscription_path}"
         )
 
     def _handle_message(self, message: pubsub_v1.subscriber.message.Message) -> None:
@@ -49,27 +52,38 @@ class PubSubSubscriber:
         try:
             data = json.loads(message.data.decode("utf-8"))
             event = data.get("event")
-            email = data.get("email")
+            user_id_str = data.get("user_id")
+            session_id = data.get("session_id")
 
-            if event != "user_ekyc_completed":
+            if event != Event.SIGN_IN:
                 logger.warning(f"Ignoring unknown event: {event}")
                 message.ack()
                 return
 
-            if not email:
-                logger.error("Message missing 'email' field, acknowledging anyway")
+            if not user_id_str:
+                logger.error("Message missing 'user_id' field, acknowledging anyway")
                 message.ack()
                 return
 
-            logger.info(f"Processing eKYC completed event for: {email}")
-            success = self._face_processing_svc.process_user(email)
-
-            if success:
-                logger.info(f"Successfully processed embeddings for: {email}")
+            try:
+                user_id = uuid.UUID(user_id_str)
+            except ValueError:
+                logger.error(f"Invalid user_id format: {user_id_str}")
                 message.ack()
+                return
+
+            logger.info(
+                f"Processing sign_in event for user_id: {user_id} (session_id={session_id})"
+            )
+            is_match = self._face_verification_svc.verify_user(user_id, session_id)
+
+            if is_match:
+                logger.info(f"Face verification MATCH for user_id: {user_id}")
             else:
-                logger.error(f"Failed to process embeddings for: {email}, will retry")
-                message.nack()
+                logger.warning(f"Face verification NOT MATCH for user_id: {user_id}")
+
+            # Always ACK — verification result is logged/printed
+            message.ack()
 
         except json.JSONDecodeError as e:
             logger.error(f"Invalid JSON in message {message.message_id}: {e}")
@@ -83,7 +97,7 @@ class PubSubSubscriber:
 
     def start(self) -> None:
         """Start the streaming pull subscriber (blocking)."""
-        logger.info(f"Starting PubSub subscriber on {self._subscription_path}...")
+        logger.info(f"Starting SignInSubscriber on {self._subscription_path}...")
 
         flow_control = pubsub_v1.types.FlowControl(
             max_messages=configs.PUBSUB_MAX_MESSAGES,
@@ -105,9 +119,9 @@ class PubSubSubscriber:
         signal.signal(signal.SIGINT, _shutdown)
         signal.signal(signal.SIGTERM, _shutdown)
 
-        logger.info("PubSub subscriber is running. Waiting for messages...")
+        logger.info("SignInSubscriber is running. Waiting for messages...")
         print("=" * 60)
-        print("  Face Matching Worker")
+        print("  Face Matching Worker — Sign In")
         print(f"  Listening on: {self._subscription_path}")
         print("  Press Ctrl+C to stop")
         print("=" * 60)
@@ -129,4 +143,4 @@ class PubSubSubscriber:
         """Stop the subscriber."""
         if self._streaming_pull_future:
             self._streaming_pull_future.cancel()
-            logger.info("PubSub subscriber stopped")
+            logger.info("SignInSubscriber stopped")
