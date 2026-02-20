@@ -10,6 +10,7 @@ from google.cloud import pubsub_v1
 from app.core.config import configs
 from app.core.constants import Event
 from app.service.face_verification_service import FaceVerificationService
+from app.service.notification_service import NotificationService
 
 logger = logging.getLogger(__name__)
 
@@ -32,8 +33,13 @@ class SignInSubscriber:
       3. ACK or NACK the message based on success/failure
     """
 
-    def __init__(self, face_verification_service: FaceVerificationService) -> None:
+    def __init__(
+        self,
+        face_verification_service: FaceVerificationService,
+        notification_service: NotificationService,
+    ) -> None:
         self._face_verification_svc = face_verification_service
+        self._notification_svc = notification_service
         self._project_id = configs.GCP_PROJECT_ID
         self._subscription_id = configs.PUBSUB_SIGNIN_SUBSCRIPTION
         self._subscriber = pubsub_v1.SubscriberClient()
@@ -81,6 +87,14 @@ class SignInSubscriber:
                 logger.info(f"Face verification MATCH for user_id: {user_id}")
             else:
                 logger.warning(f"Face verification NOT MATCH for user_id: {user_id}")
+
+            # Send FCM notification with the verification result
+            if session_id:
+                self._notification_svc.notify_signin_result(
+                    session_id=session_id,
+                    user_id=user_id_str,
+                    success=is_match,
+                )
 
             # Always ACK — verification result is logged/printed
             message.ack()

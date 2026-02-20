@@ -53,6 +53,7 @@ from app.service.embedding_service import EmbeddingService  # noqa: E402
 from app.service.storage_service import StorageService  # noqa: E402
 from app.service.face_processing_service import FaceProcessingService  # noqa: E402
 from app.service.face_verification_service import FaceVerificationService  # noqa: E402
+from app.service.notification_service import NotificationService  # noqa: E402
 from app.service.matching_service import (  # noqa: E402
     MODELS,
     CLASSIFIER_WEIGHT,
@@ -76,13 +77,14 @@ logger = logging.getLogger(__name__)
 
 
 def _build_services() -> tuple[
-    FaceProcessingService, FaceVerificationService, Database
+    FaceProcessingService, FaceVerificationService, NotificationService, Database
 ]:
     """Wire up all dependencies for PubSub workers."""
     db = Database(db_url=configs.DATABASE_URL)
     face_repo = UserFaceRepository(session_factory=db.session)
     embedding_svc = EmbeddingService()
     storage_svc = StorageService()
+    notification_svc = NotificationService()
     face_processing_svc = FaceProcessingService(
         user_face_repository=face_repo,
         embedding_service=embedding_svc,
@@ -92,20 +94,26 @@ def _build_services() -> tuple[
         user_face_repository=face_repo,
         storage_service=storage_svc,
     )
-    return face_processing_svc, face_verification_svc, db
+    return face_processing_svc, face_verification_svc, notification_svc, db
 
 
 def cmd_worker_signup():
     """Start sign-up subscriber — listens for sign_up events."""
-    face_processing_svc, _, _ = _build_services()
-    subscriber = SignUpSubscriber(face_processing_service=face_processing_svc)
+    face_processing_svc, _, notification_svc, _ = _build_services()
+    subscriber = SignUpSubscriber(
+        face_processing_service=face_processing_svc,
+        notification_service=notification_svc,
+    )
     subscriber.start()
 
 
 def cmd_worker_signin():
     """Start sign-in subscriber — listens for sign_in events."""
-    _, face_verification_svc, _ = _build_services()
-    subscriber = SignInSubscriber(face_verification_service=face_verification_svc)
+    _, face_verification_svc, notification_svc, _ = _build_services()
+    subscriber = SignInSubscriber(
+        face_verification_service=face_verification_svc,
+        notification_service=notification_svc,
+    )
     subscriber.start()
 
 
@@ -119,7 +127,7 @@ def cmd_process(user_id_str: str):
         logger.error(f"Invalid user_id format: {user_id_str}")
         return False
 
-    face_processing_svc, _, _ = _build_services()
+    face_processing_svc, _, _, _ = _build_services()
     logger.info(f"Manually processing user_id: {user_id}")
     success = face_processing_svc.process_user(user_id)
     if success:

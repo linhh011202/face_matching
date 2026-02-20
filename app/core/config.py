@@ -68,6 +68,9 @@ class Configs:
     GCS_BUCKET_NAME: str = os.environ.get("GCS_BUCKET_NAME") or _raw.get(
         "firebase", {}
     ).get("bucket_name", "")
+    FIREBASE_RTDB_URL: str = os.environ.get("FIREBASE_RTDB_URL") or _raw.get(
+        "firebase", {}
+    ).get("rtdb_url", "")
 
     # Embedding model
     EMBEDDING_MODEL: str = _raw.get("embedding", {}).get("model_name", "ArcFace")

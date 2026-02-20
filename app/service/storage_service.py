@@ -23,7 +23,11 @@ def _get_firebase_app() -> firebase_admin.App:
             cred_path = Path(__file__).resolve().parents[2] / cred_path
         cred = credentials.Certificate(str(cred_path))
         _firebase_app = firebase_admin.initialize_app(
-            cred, {"storageBucket": configs.GCS_BUCKET_NAME}
+            cred,
+            {
+                "storageBucket": configs.GCS_BUCKET_NAME,
+                "databaseURL": configs.FIREBASE_RTDB_URL,
+            },
         )
         logger.info("Firebase Admin app initialized")
     return _firebase_app

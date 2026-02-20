@@ -10,6 +10,7 @@ from google.cloud import pubsub_v1
 from app.core.config import configs
 from app.core.constants import Event
 from app.service.face_processing_service import FaceProcessingService
+from app.service.notification_service import NotificationService
 
 logger = logging.getLogger(__name__)
 
@@ -32,8 +33,13 @@ class SignUpSubscriber:
       3. ACK or NACK the message based on success/failure
     """
 
-    def __init__(self, face_processing_service: FaceProcessingService) -> None:
+    def __init__(
+        self,
+        face_processing_service: FaceProcessingService,
+        notification_service: NotificationService,
+    ) -> None:
         self._face_processing_svc = face_processing_service
+        self._notification_svc = notification_service
         self._project_id = configs.GCP_PROJECT_ID
         self._subscription_id = configs.PUBSUB_SIGNUP_SUBSCRIPTION
         self._subscriber = pubsub_v1.SubscriberClient()
@@ -85,6 +91,14 @@ class SignUpSubscriber:
                     f"Failed to process embeddings for user_id: {user_id}, will retry"
                 )
                 message.nack()
+
+            # Send FCM notification with the result
+            if session_id:
+                self._notification_svc.notify_signup_result(
+                    session_id=session_id,
+                    user_id=user_id_str,
+                    success=success,
+                )
 
         except json.JSONDecodeError as e:
             logger.error(f"Invalid JSON in message {message.message_id}: {e}")
