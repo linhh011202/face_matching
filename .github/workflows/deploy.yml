@@ -128,7 +128,37 @@ jobs:
               kubectl scale deployment/face-matching-signup --replicas=1
               kubectl scale deployment/face-matching-signin --replicas=1
 
-              # Wait for both rollouts in parallel
-              kubectl rollout status deployment/face-matching-signup --timeout=600s &
-              kubectl rollout status deployment/face-matching-signin --timeout=600s &
-              wait $(jobs -p)
+              # Use shorter termination grace to reduce rollout stalls on worker pods
+              kubectl patch deployment face-matching-signup --type=merge \
+                -p '{"spec":{"template":{"spec":{"terminationGracePeriodSeconds":30}}}}'
+              kubectl patch deployment face-matching-signin --type=merge \
+                -p '{"spec":{"template":{"spec":{"terminationGracePeriodSeconds":30}}}}'
+
+              wait_rollout() {
+                local deploy="$1"
+                local timeout="$2"
+
+                if kubectl rollout status deployment/"$deploy" --timeout="$timeout"; then
+                  return 0
+                fi
+
+                echo "Rollout timed out for $deploy. Collecting diagnostics..."
+                kubectl get deployment "$deploy" -o wide || true
+                kubectl describe deployment "$deploy" || true
+                kubectl get pods -o wide || true
+
+                # Force-delete stuck terminating pods, then retry rollout status.
+                terminating_pods="$(kubectl get pods --no-headers 2>/dev/null | awk '$3 == "Terminating" {print $1}')"
+                if [ -n "$terminating_pods" ]; then
+                  echo "Force deleting terminating pods: $terminating_pods"
+                  for pod in $terminating_pods; do
+                    kubectl delete pod "$pod" --grace-period=0 --force || true
+                  done
+                fi
+
+                kubectl rollout status deployment/"$deploy" --timeout=300s
+              }
+
+              # Wait rollouts sequentially to reduce concurrent resource pressure.
+              wait_rollout face-matching-signup 600s
+              wait_rollout face-matching-signin 600s
