@@ -1,107 +1,134 @@
 name: Deploy to GKE
 
 on:
-  push:
-    branches: [main]
+   push:
+      branches: [main]
 
 env:
-  PROJECT_ID: banking-ekyc-487718
-  REGION: us-central1
-  REPOSITORY: face-matching
-  IMAGE_NAME: face-matching
-  CLUSTER_NAME: banking-ekyc-cluster
+   PROJECT_ID: banking-ekyc-487718
+   REGION: us-central1
+   REPOSITORY: face-matching
+   IMAGE_NAME: face-matching
+   CLUSTER_NAME: banking-ekyc-cluster
 
 jobs:
-  ci:
-    name: CI
-    uses: ./.github/workflows/ci.yml
+   ci:
+      name: CI
+      uses: ./.github/workflows/ci.yml
 
-  deploy:
-    name: Deploy
-    runs-on: ubuntu-latest
-    needs: ci
-    permissions:
-      contents: read
-      id-token: write
+   deploy:
+      name: Deploy
+      runs-on: ubuntu-latest
+      needs: ci
+      permissions:
+         contents: read
+         id-token: write
 
-    steps:
-      - uses: actions/checkout@v4
+      steps:
+         - uses: actions/checkout@v4
 
-      - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v2
-        with:
-          workload_identity_provider: projects/884304521920/locations/global/workloadIdentityPools/github-pool/providers/github-provider
-          service_account: github-deployer@banking-ekyc-487718.iam.gserviceaccount.com
+         - name: Authenticate to Google Cloud
+           uses: google-github-actions/auth@v2
+           with:
+              workload_identity_provider: projects/884304521920/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+              service_account: github-deployer@banking-ekyc-487718.iam.gserviceaccount.com
 
-      - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v2
-        with:
-          install_components: 'gke-gcloud-auth-plugin'
+         - name: Set up Cloud SDK
+           uses: google-github-actions/setup-gcloud@v2
+           with:
+              install_components: "gke-gcloud-auth-plugin"
 
-      - name: Configure Docker for Artifact Registry
-        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+         - name: Configure Docker for Artifact Registry
+           run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
 
-      - name: Create Artifact Registry repository (if not exists)
-        run: |
-          gcloud artifacts repositories create ${{ env.REPOSITORY }} \
-            --repository-format=docker \
-            --location=${{ env.REGION }} \
-            --project=${{ env.PROJECT_ID }} \
-            --quiet 2>/dev/null || true
+         - name: Create Artifact Registry repository (if not exists)
+           run: |
+              gcloud artifacts repositories create ${{ env.REPOSITORY }} \
+                --repository-format=docker \
+                --location=${{ env.REGION }} \
+                --project=${{ env.PROJECT_ID }} \
+                --quiet 2>/dev/null || true
 
-      - name: Fetch Firebase Credentials from Secret Manager
-        run: |
-          gcloud secrets versions access latest \
-            --secret=firebase-credentials \
-            --project=${{ env.PROJECT_ID }} > firebase_credentials.json
+         - name: Fetch Firebase Credentials from Secret Manager
+           run: |
+              gcloud secrets versions access latest \
+                --secret=firebase-credentials \
+                --project=${{ env.PROJECT_ID }} > firebase_credentials.json
 
-      - name: Write config from GitHub Secret
-        env:
-          CONFIG_CONTENT: ${{ secrets.APPLICATION_CONFIG }}
-        run: |
-          printf '%s\n' "$CONFIG_CONTENT" > config.yaml
+         - name: Write config from GitHub Secret
+           env:
+              CONFIG_CONTENT: ${{ secrets.APPLICATION_CONFIG }}
+           run: |
+              printf '%s\n' "$CONFIG_CONTENT" > config.yaml
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+         - name: Set up Docker Buildx
+           uses: docker/setup-buildx-action@v3
 
-      - name: Build and Push Image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          push: true
-          tags: |
-            ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
-            ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE_NAME }}:latest
-          # Cache layers in GitHub Actions cache (speeds up TF/model re-builds)
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+         - name: Build and Push Image
+           uses: docker/build-push-action@v5
+           with:
+              context: .
+              push: true
+              tags: |
+                 ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+                 ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE_NAME }}:latest
+              # Cache layers in GitHub Actions cache (speeds up TF/model re-builds)
+              cache-from: type=gha
+              cache-to: type=gha,mode=max
 
-      - name: Deploy to GKE
-        run: |
-          # Configure kubectl
-          gcloud container clusters get-credentials ${{ env.CLUSTER_NAME }} \
-            --region ${{ env.REGION }} \
-            --project ${{ env.PROJECT_ID }}
+         - name: Deploy to GKE
+           run: |
+              # Configure kubectl
+              gcloud container clusters get-credentials ${{ env.CLUSTER_NAME }} \
+                --region ${{ env.REGION }} \
+                --project ${{ env.PROJECT_ID }}
 
-          # Create/update K8s secret with config and credentials
-          kubectl create secret generic face-matching-secrets \
-            --from-file=config.yaml=config.yaml \
-            --from-file=firebase_credentials.json=firebase_credentials.json \
-            --dry-run=client -o yaml | kubectl apply -f -
+              # Create/update K8s secret with config and credentials
+              kubectl create secret generic face-matching-secrets \
+                --from-file=config.yaml=config.yaml \
+                --from-file=firebase_credentials.json=firebase_credentials.json \
+                --dry-run=client -o yaml | kubectl apply -f -
 
-          # Get K8s manifests from the GKE config repo
-          git clone https://github.com/linhh011202/gke_banking_ekyc.git k8s-config
+              # Get K8s manifests from the GKE config repo
+              git clone https://github.com/linhh011202/gke_banking_ekyc.git k8s-config
 
-          # Update the image tag in both deployment manifests
-          IMAGE=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
-          sed -i "s|image: .*face-matching.*|image: $IMAGE|g" k8s-config/face-matching-signup-deployment.yaml
-          sed -i "s|image: .*face-matching.*|image: $IMAGE|g" k8s-config/face-matching-signin-deployment.yaml
+              # Update the image tag in both deployment manifests
+              IMAGE=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+              sed -i "s|image: .*face-matching.*|image: $IMAGE|g" k8s-config/face-matching-signup-deployment.yaml
+              sed -i "s|image: .*face-matching.*|image: $IMAGE|g" k8s-config/face-matching-signin-deployment.yaml
 
-          # Apply both deployments
-          kubectl apply -f k8s-config/face-matching-signup-deployment.yaml
-          kubectl apply -f k8s-config/face-matching-signin-deployment.yaml
+              # Apply both deployments
+              kubectl apply -f k8s-config/face-matching-signup-deployment.yaml
+              kubectl apply -f k8s-config/face-matching-signin-deployment.yaml
 
-          # Wait for both rollouts in parallel
-          kubectl rollout status deployment/face-matching-signup --timeout=600s &
-          kubectl rollout status deployment/face-matching-signin --timeout=600s &
-          wait $(jobs -p)
+              # Runtime tuning for lower latency (register/login)
+              kubectl set env deployment/face-matching-signup \
+                PUBSUB_MAX_MESSAGES=20 \
+                DOWNLOAD_WORKERS=8 \
+                EMBEDDING_WORKERS=2 \
+                SIGNUP_EMBEDDING_WORKERS=2 \
+                SIGNUP_MAX_IMAGES_PER_POSE=1 \
+                EMBEDDING_WARMUP=true
+
+              kubectl set env deployment/face-matching-signin \
+                PUBSUB_MAX_MESSAGES=20 \
+                DOWNLOAD_WORKERS=6 \
+                EMBEDDING_WORKERS=2 \
+                EMBEDDING_ENFORCE_DETECTION=false \
+                SIGNIN_USE_DB_EMBEDDINGS=true \
+                SIGNIN_ALLOW_ON_DEMAND_REGISTERED_EMBEDDINGS=false \
+                SIGNIN_MAX_LOGIN_IMAGES=1 \
+                SIGNIN_DISTANCE_THRESHOLD=0.68 \
+                SIGNIN_PERSONALIZATION_ENABLED=true \
+                SIGNIN_PERSONALIZATION_MAX_EMBEDDINGS=5 \
+                SIGNIN_UPDATE_LOGIN_EMBEDDING=true \
+                EMBEDDING_WARMUP=true
+
+              # Ensure enough worker pods for burst traffic
+              kubectl scale deployment/face-matching-signup --replicas=2
+              kubectl scale deployment/face-matching-signin --replicas=2
+
+              # Wait for both rollouts in parallel
+              kubectl rollout status deployment/face-matching-signup --timeout=600s &
+              kubectl rollout status deployment/face-matching-signin --timeout=600s &
+              wait $(jobs -p)

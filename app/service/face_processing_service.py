@@ -1,6 +1,8 @@
 import logging
+import time
 import uuid
 
+from app.core.config import configs
 from app.repository.user_face_repository import UserFaceRepository
 from app.service.embedding_service import EmbeddingService
 from app.service.storage_service import StorageService
@@ -39,6 +41,7 @@ class FaceProcessingService:
         Returns:
             True if at least one embedding was stored successfully.
         """
+        started_at = time.perf_counter()
         logger.info(f"Processing face embeddings for user_id: {user_id}")
 
         # Check if embeddings already exist
@@ -64,13 +67,19 @@ class FaceProcessingService:
                 logger.warning(f"No source images for face_id={face_id} pose={pose}")
                 continue
 
+            max_images = max(1, configs.SIGNUP_MAX_IMAGES_PER_POSE)
+            selected_source_images = source_images[-max_images:]
+
             logger.info(
                 f"Processing face_id={face_id} pose={pose} — "
-                f"{len(source_images)} source image(s)"
+                f"{len(selected_source_images)}/{len(source_images)} source image(s)"
             )
 
             # Step 1: Download images from Firebase Storage
-            local_paths = self._storage_svc.download_images(source_images)
+            local_paths = self._storage_svc.download_images(
+                selected_source_images,
+                max_workers=configs.DOWNLOAD_WORKERS,
+            )
             total_downloaded.extend(local_paths)
 
             if not local_paths:
@@ -80,7 +89,10 @@ class FaceProcessingService:
                 continue
 
             # Step 2: Extract average embedding
-            embedding = self._embedding_svc.compute_average_embedding(local_paths)
+            embedding = self._embedding_svc.compute_average_embedding(
+                local_paths,
+                max_workers=configs.SIGNUP_EMBEDDING_WORKERS,
+            )
             if embedding is None:
                 logger.error(
                     f"Failed to extract embedding for face_id={face_id} pose={pose}"
@@ -103,8 +115,10 @@ class FaceProcessingService:
         # Cleanup temp files
         self._storage_svc.cleanup_files(total_downloaded)
 
+        elapsed = time.perf_counter() - started_at
         logger.info(
             f"Completed processing for user_id {user_id}: "
-            f"{success_count}/{len(faces)} embeddings stored"
+            f"{success_count}/{len(faces)} embeddings stored "
+            f"(elapsed={elapsed:.2f}s)"
         )
         return success_count > 0

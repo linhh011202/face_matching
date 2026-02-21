@@ -93,6 +93,7 @@ def _build_services() -> tuple[
     face_verification_svc = FaceVerificationService(
         user_face_repository=face_repo,
         storage_service=storage_svc,
+        embedding_service=embedding_svc,
     )
     return face_processing_svc, face_verification_svc, notification_svc, db
 

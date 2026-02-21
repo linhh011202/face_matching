@@ -3,6 +3,7 @@ import uuid
 from contextlib import AbstractContextManager
 from typing import Callable
 
+import numpy as np
 from sqlalchemy.orm import Session
 
 from app.model.user_face_model import UserFaceModel
@@ -55,6 +56,42 @@ class UserFaceRepository:
         """Alias for get_faces_by_user_id — semantic clarity."""
         return self.get_faces_by_user_id(user_id)
 
+    def get_registered_embeddings_by_user_id(
+        self, user_id: uuid.UUID
+    ) -> list[np.ndarray]:
+        """Get normalized registered embeddings for a user."""
+        logger.debug(f"Querying registered embeddings for user_id: {user_id}")
+        try:
+            with self._session_factory() as session:
+                rows = (
+                    session.query(UserFaceModel.embedding)
+                    .filter(
+                        UserFaceModel.user_id == user_id,
+                        UserFaceModel.pose.in_(_REGISTERED_POSES),
+                        UserFaceModel.embedding.isnot(None),
+                    )
+                    .all()
+                )
+                embeddings: list[np.ndarray] = []
+                for row in rows:
+                    raw_embedding = row[0]
+                    if not raw_embedding:
+                        continue
+                    emb = np.array(raw_embedding, dtype=float)
+                    norm = np.linalg.norm(emb)
+                    if norm > 0:
+                        embeddings.append(emb / norm)
+                logger.info(
+                    f"Found {len(embeddings)} registered embeddings for user_id: {user_id}"
+                )
+                return embeddings
+        except Exception as e:
+            logger.error(
+                f"Database error querying embeddings for user_id={user_id}: {e}",
+                exc_info=True,
+            )
+            return []
+
     def get_login_face_by_user_id(self, user_id: uuid.UUID) -> UserFaceModel | None:
         """Get the most recent face record with pose='login' for a user."""
         logger.debug(f"Querying login face for user_id: {user_id}")
@@ -82,6 +119,50 @@ class UserFaceRepository:
                 exc_info=True,
             )
             return None
+
+    def get_recent_login_embeddings_by_user_id(
+        self, user_id: uuid.UUID, limit: int
+    ) -> list[np.ndarray]:
+        """Get the most recent normalized login embeddings for personalization."""
+        size = max(0, int(limit))
+        if size == 0:
+            return []
+
+        logger.debug(
+            f"Querying recent login embeddings for user_id={user_id}, limit={size}"
+        )
+        try:
+            with self._session_factory() as session:
+                rows = (
+                    session.query(UserFaceModel.embedding)
+                    .filter(
+                        UserFaceModel.user_id == user_id,
+                        UserFaceModel.pose == "login",
+                        UserFaceModel.embedding.isnot(None),
+                    )
+                    .order_by(UserFaceModel.id.desc())
+                    .limit(size)
+                    .all()
+                )
+                embeddings: list[np.ndarray] = []
+                for row in rows:
+                    raw_embedding = row[0]
+                    if not raw_embedding:
+                        continue
+                    emb = np.array(raw_embedding, dtype=float)
+                    norm = np.linalg.norm(emb)
+                    if norm > 0:
+                        embeddings.append(emb / norm)
+                logger.info(
+                    f"Found {len(embeddings)} login embeddings for user_id={user_id}"
+                )
+                return embeddings
+        except Exception as e:
+            logger.error(
+                f"Database error querying login embeddings for user_id={user_id}: {e}",
+                exc_info=True,
+            )
+            return []
 
     def check_embeddings_exist(self, user_id: uuid.UUID) -> bool:
         """Check if all registered face records already have embeddings."""

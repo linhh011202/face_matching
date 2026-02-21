@@ -5,6 +5,14 @@ from pathlib import Path
 import yaml
 
 
+def _as_bool(value, default: bool) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
 def _load_yaml_config() -> dict:
     config_path = Path(
         os.environ.get("CONFIG_PATH")
@@ -78,9 +86,64 @@ class Configs:
         "detector_backend", "retinaface"
     )
     VECTOR_DIMENSION: int = int(_raw.get("embedding", {}).get("vector_dimension", 512))
+    EMBEDDING_ENFORCE_DETECTION: bool = _as_bool(
+        os.environ.get("EMBEDDING_ENFORCE_DETECTION"),
+        _raw.get("embedding", {}).get("enforce_detection", True),
+    )
+    EMBEDDING_WARMUP: bool = _as_bool(
+        os.environ.get("EMBEDDING_WARMUP"),
+        _raw.get("embedding", {}).get("warmup", True),
+    )
+    EMBEDDING_WORKERS: int = int(
+        os.environ.get("EMBEDDING_WORKERS")
+        or _raw.get("embedding", {}).get("workers", 2)
+    )
 
     # Temp directory for downloaded images
     TEMP_DIR: str = _raw.get("temp_dir", "/tmp/face_matching")
+    DOWNLOAD_WORKERS: int = int(
+        os.environ.get("DOWNLOAD_WORKERS") or _raw.get("download_workers", 6)
+    )
+
+    # Sign-up processing
+    SIGNUP_EMBEDDING_WORKERS: int = int(
+        os.environ.get("SIGNUP_EMBEDDING_WORKERS")
+        or _raw.get("signup", {}).get("embedding_workers", EMBEDDING_WORKERS)
+    )
+    SIGNUP_MAX_IMAGES_PER_POSE: int = int(
+        os.environ.get("SIGNUP_MAX_IMAGES_PER_POSE")
+        or _raw.get("signup", {}).get("max_images_per_pose", 1)
+    )
+
+    # Sign-in fast path
+    SIGNIN_USE_DB_EMBEDDINGS: bool = _as_bool(
+        os.environ.get("SIGNIN_USE_DB_EMBEDDINGS"),
+        _raw.get("signin", {}).get("use_db_embeddings", True),
+    )
+    SIGNIN_MAX_LOGIN_IMAGES: int = int(
+        os.environ.get("SIGNIN_MAX_LOGIN_IMAGES")
+        or _raw.get("signin", {}).get("max_login_images", 1)
+    )
+    SIGNIN_DISTANCE_THRESHOLD: float = float(
+        os.environ.get("SIGNIN_DISTANCE_THRESHOLD")
+        or _raw.get("signin", {}).get("distance_threshold", 0.68)
+    )
+    SIGNIN_ALLOW_ON_DEMAND_REGISTERED_EMBEDDINGS: bool = _as_bool(
+        os.environ.get("SIGNIN_ALLOW_ON_DEMAND_REGISTERED_EMBEDDINGS"),
+        _raw.get("signin", {}).get("allow_on_demand_registered_embeddings", False),
+    )
+    SIGNIN_PERSONALIZATION_ENABLED: bool = _as_bool(
+        os.environ.get("SIGNIN_PERSONALIZATION_ENABLED"),
+        _raw.get("signin", {}).get("personalization_enabled", True),
+    )
+    SIGNIN_PERSONALIZATION_MAX_EMBEDDINGS: int = int(
+        os.environ.get("SIGNIN_PERSONALIZATION_MAX_EMBEDDINGS")
+        or _raw.get("signin", {}).get("personalization_max_embeddings", 5)
+    )
+    SIGNIN_UPDATE_LOGIN_EMBEDDING: bool = _as_bool(
+        os.environ.get("SIGNIN_UPDATE_LOGIN_EMBEDDING"),
+        _raw.get("signin", {}).get("update_login_embedding", True),
+    )
 
     @property
     def DATABASE_URL(self) -> str:

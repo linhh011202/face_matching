@@ -1,6 +1,7 @@
 import logging
 import os
 import tempfile
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
@@ -105,17 +106,36 @@ class StorageService:
             logger.error(f"Failed to download image {image_url}: {e}")
             return None
 
-    def download_images(self, image_urls: list[str]) -> list[str]:
+    def download_images(self, image_urls: list[str], max_workers: int = 1) -> list[str]:
         """
         Download multiple images. Returns list of local file paths
         (only successfully downloaded images).
         """
+        urls = [url for url in image_urls if url]
+        if not urls:
+            return []
+
+        workers = max(1, min(max_workers, len(urls)))
         local_paths = []
-        for url in image_urls:
-            path = self.download_image(url)
-            if path:
-                local_paths.append(path)
-        logger.info(f"Downloaded {len(local_paths)}/{len(image_urls)} images")
+
+        if workers == 1:
+            for url in urls:
+                path = self.download_image(url)
+                if path:
+                    local_paths.append(path)
+            logger.info(f"Downloaded {len(local_paths)}/{len(urls)} images")
+            return local_paths
+
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            futures = {executor.submit(self.download_image, url): url for url in urls}
+            for future in as_completed(futures):
+                path = future.result()
+                if path:
+                    local_paths.append(path)
+
+        logger.info(
+            f"Downloaded {len(local_paths)}/{len(urls)} images (workers={workers})"
+        )
         return local_paths
 
     @staticmethod

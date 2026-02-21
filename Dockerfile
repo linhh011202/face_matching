@@ -35,6 +35,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
+ENV DEEPFACE_HOME="/opt/deepface"
+RUN mkdir -p "${DEEPFACE_HOME}"
 
 # Copy virtual environment and app source
 COPY --from=builder /app/.venv /app/.venv
@@ -49,6 +51,17 @@ COPY --from=builder /app/app ./app
 ENV CONFIG_PATH="/app/secrets/config.yaml"
 ENV FIREBASE_CREDENTIALS_PATH="/app/secrets/firebase_credentials.json"
 ENV PATH="/app/.venv/bin:$PATH"
+
+# Best-effort warmup to reduce first-request cold start in pods.
+RUN python - <<'PY'
+try:
+    from deepface import DeepFace
+
+    DeepFace.build_model("ArcFace")
+    print("DeepFace warmup: ArcFace model prepared")
+except Exception as exc:
+    print(f"DeepFace warmup skipped: {exc}")
+PY
 
 # PubSub worker — K8s deployments override this via `command:` field
 # Default to worker-signup for local / docker-compose usage
