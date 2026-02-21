@@ -1,6 +1,7 @@
 import logging
 import os
 import tempfile
+import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from urllib.parse import unquote, urlparse
@@ -13,24 +14,27 @@ from app.core.config import configs
 logger = logging.getLogger(__name__)
 
 _firebase_app: firebase_admin.App | None = None
+_firebase_lock = threading.Lock()
 
 
 def _get_firebase_app() -> firebase_admin.App:
-    """Initialize Firebase Admin SDK (singleton)."""
+    """Initialize Firebase Admin SDK (thread-safe singleton)."""
     global _firebase_app
     if _firebase_app is None:
-        cred_path = Path(configs.FIREBASE_CREDENTIALS_PATH)
-        if not cred_path.is_absolute():
-            cred_path = Path(__file__).resolve().parents[2] / cred_path
-        cred = credentials.Certificate(str(cred_path))
-        _firebase_app = firebase_admin.initialize_app(
-            cred,
-            {
-                "storageBucket": configs.GCS_BUCKET_NAME,
-                "databaseURL": configs.FIREBASE_RTDB_URL,
-            },
-        )
-        logger.info("Firebase Admin app initialized")
+        with _firebase_lock:
+            if _firebase_app is None:
+                cred_path = Path(configs.FIREBASE_CREDENTIALS_PATH)
+                if not cred_path.is_absolute():
+                    cred_path = Path(__file__).resolve().parents[2] / cred_path
+                cred = credentials.Certificate(str(cred_path))
+                _firebase_app = firebase_admin.initialize_app(
+                    cred,
+                    {
+                        "storageBucket": configs.GCS_BUCKET_NAME,
+                        "databaseURL": configs.FIREBASE_RTDB_URL,
+                    },
+                )
+                logger.info("Firebase Admin app initialized")
     return _firebase_app
 
 
@@ -40,6 +44,8 @@ class StorageService:
     def __init__(self) -> None:
         self._temp_dir = configs.TEMP_DIR
         os.makedirs(self._temp_dir, exist_ok=True)
+        # Eagerly initialize Firebase to avoid cold-start latency on first download
+        _get_firebase_app()
         logger.info(f"StorageService initialized — temp_dir={self._temp_dir}")
 
     def _get_bucket(self):

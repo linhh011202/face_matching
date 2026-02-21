@@ -117,7 +117,7 @@ jobs:
                 EMBEDDING_ENFORCE_DETECTION=false \
                 SIGNIN_USE_DB_EMBEDDINGS=true \
                 SIGNIN_ALLOW_ON_DEMAND_REGISTERED_EMBEDDINGS=false \
-                SIGNIN_MAX_LOGIN_IMAGES=1 \
+                SIGNIN_MAX_LOGIN_IMAGES=3 \
                 SIGNIN_DISTANCE_THRESHOLD=0.68 \
                 SIGNIN_PERSONALIZATION_ENABLED=true \
                 SIGNIN_PERSONALIZATION_MAX_EMBEDDINGS=5 \

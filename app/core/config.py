@@ -122,7 +122,7 @@ class Configs:
     )
     SIGNIN_MAX_LOGIN_IMAGES: int = int(
         os.environ.get("SIGNIN_MAX_LOGIN_IMAGES")
-        or _raw.get("signin", {}).get("max_login_images", 1)
+        or _raw.get("signin", {}).get("max_login_images", 3)
     )
     SIGNIN_DISTANCE_THRESHOLD: float = float(
         os.environ.get("SIGNIN_DISTANCE_THRESHOLD")

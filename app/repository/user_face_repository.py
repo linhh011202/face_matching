@@ -20,6 +20,28 @@ class UserFaceRepository:
         self._session_factory = session_factory
         logger.info("UserFaceRepository initialized")
 
+    @staticmethod
+    def _normalize_embedding(raw_embedding) -> np.ndarray | None:
+        """
+        Convert raw DB vector to a normalized np.ndarray.
+        Returns None when the value is empty/invalid.
+        """
+        if raw_embedding is None:
+            return None
+
+        try:
+            emb = np.asarray(raw_embedding, dtype=float)
+        except Exception:
+            return None
+
+        if emb.size == 0:
+            return None
+
+        norm = np.linalg.norm(emb)
+        if norm <= 0:
+            return None
+        return emb / norm
+
     # ── read methods ──────────────────────────────────────────
 
     def get_faces_by_user_id(self, user_id: uuid.UUID) -> list[UserFaceModel] | None:
@@ -75,12 +97,9 @@ class UserFaceRepository:
                 embeddings: list[np.ndarray] = []
                 for row in rows:
                     raw_embedding = row[0]
-                    if not raw_embedding:
-                        continue
-                    emb = np.array(raw_embedding, dtype=float)
-                    norm = np.linalg.norm(emb)
-                    if norm > 0:
-                        embeddings.append(emb / norm)
+                    emb = self._normalize_embedding(raw_embedding)
+                    if emb is not None:
+                        embeddings.append(emb)
                 logger.info(
                     f"Found {len(embeddings)} registered embeddings for user_id: {user_id}"
                 )
@@ -147,12 +166,9 @@ class UserFaceRepository:
                 embeddings: list[np.ndarray] = []
                 for row in rows:
                     raw_embedding = row[0]
-                    if not raw_embedding:
-                        continue
-                    emb = np.array(raw_embedding, dtype=float)
-                    norm = np.linalg.norm(emb)
-                    if norm > 0:
-                        embeddings.append(emb / norm)
+                    emb = self._normalize_embedding(raw_embedding)
+                    if emb is not None:
+                        embeddings.append(emb)
                 logger.info(
                     f"Found {len(embeddings)} login embeddings for user_id={user_id}"
                 )
@@ -179,7 +195,7 @@ class UserFaceRepository:
                 if not faces:
                     return False
 
-                return all(f.embedding is not None for f in faces)
+                return all(row[0] is not None for row in faces)
 
         except Exception as e:
             logger.error(
