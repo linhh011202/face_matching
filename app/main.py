@@ -76,9 +76,9 @@ logger = logging.getLogger(__name__)
 # ── PubSub Worker Commands ───────────────────────────────────
 
 
-def _build_services() -> (
-    tuple[FaceProcessingService, FaceVerificationService, NotificationService, Database]
-):
+def _build_services() -> tuple[
+    FaceProcessingService, FaceVerificationService, NotificationService, Database
+]:
     """Wire up all dependencies for PubSub workers."""
     db = Database(db_url=configs.DATABASE_URL)
     face_repo = UserFaceRepository(session_factory=db.session)
