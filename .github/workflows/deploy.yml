@@ -101,6 +101,7 @@ jobs:
           kubectl apply -f k8s-config/face-matching-signup-deployment.yaml
           kubectl apply -f k8s-config/face-matching-signin-deployment.yaml
 
-          # Wait for both rollouts
-          kubectl rollout status deployment/face-matching-signup --timeout=300s
-          kubectl rollout status deployment/face-matching-signin --timeout=300s
+          # Wait for both rollouts in parallel
+          kubectl rollout status deployment/face-matching-signup --timeout=600s &
+          kubectl rollout status deployment/face-matching-signin --timeout=600s &
+          wait $(jobs -p)
