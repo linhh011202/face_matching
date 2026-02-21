@@ -11,7 +11,6 @@ RTDB structure written by identity_service:
 This service:
   1. Reads fcm_token from /sessions/{session_id}
   2. Sends an FCM push notification with the result payload
-  3. Cleans up the RTDB session entry after sending
 """
 
 import logging
@@ -80,7 +79,6 @@ class NotificationService:
         Core notification logic:
           1. Read FCM token from RTDB
           2. Build and send FCM message
-          3. Clean up RTDB entry
         """
         fcm_token = self._get_fcm_token(session_id)
         if not fcm_token:
@@ -114,8 +112,6 @@ class NotificationService:
             logger.error(
                 f"Failed to send FCM notification for session_id={session_id}: {e}"
             )
-        finally:
-            self._cleanup_session(session_id)
 
     @staticmethod
     def _get_fcm_token(session_id: str) -> str | None:
@@ -133,14 +129,3 @@ class NotificationService:
                 f"Failed to read FCM token from RTDB for session_id={session_id}: {e}"
             )
             return None
-
-    @staticmethod
-    def _cleanup_session(session_id: str) -> None:
-        """Remove session entry from RTDB after notification is sent."""
-        try:
-            _get_firebase_app()
-            ref = db.reference(f"/sessions/{session_id}")
-            ref.delete()
-            logger.info(f"Cleaned up RTDB session: {session_id}")
-        except Exception as e:
-            logger.warning(f"Failed to clean up RTDB session {session_id}: {e}")
