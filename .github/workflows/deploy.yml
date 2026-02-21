@@ -125,8 +125,8 @@ jobs:
                 EMBEDDING_WARMUP=true
 
               # Ensure enough worker pods for burst traffic
-              kubectl scale deployment/face-matching-signup --replicas=2
-              kubectl scale deployment/face-matching-signin --replicas=2
+              kubectl scale deployment/face-matching-signup --replicas=1
+              kubectl scale deployment/face-matching-signin --replicas=1
 
               # Wait for both rollouts in parallel
               kubectl rollout status deployment/face-matching-signup --timeout=600s &
