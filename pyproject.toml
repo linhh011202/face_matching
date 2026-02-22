@@ -6,8 +6,8 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
    "deepface>=0.0.98",
-   "tf-keras>=2.20.1",
-   "tensorflow[and-cuda]>=2.20.0",
+   "tf-keras>=2.18.0,<2.19",
+   "tensorflow[and-cuda]>=2.18.0,<2.19",
    "scikit-learn>=1.5.0",
    "google-cloud-pubsub>=2.35.0",
    "firebase-admin>=6.5.0",

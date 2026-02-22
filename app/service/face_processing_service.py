@@ -67,8 +67,11 @@ class FaceProcessingService:
                 logger.warning(f"No source images for face_id={face_id} pose={pose}")
                 continue
 
-            max_images = max(1, configs.SIGNUP_MAX_IMAGES_PER_POSE)
-            selected_source_images = source_images[-max_images:]
+            max_images = configs.SIGNUP_MAX_IMAGES_PER_POSE
+            if max_images > 0:
+                selected_source_images = source_images[-max_images:]
+            else:
+                selected_source_images = source_images
 
             logger.info(
                 f"Processing face_id={face_id} pose={pose} — "
