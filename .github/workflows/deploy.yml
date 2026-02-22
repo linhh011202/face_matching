@@ -97,42 +97,31 @@ jobs:
               sed -i "s|image: .*face-matching.*|image: $IMAGE|g" k8s-config/face-matching-signup-deployment.yaml
               sed -i "s|image: .*face-matching.*|image: $IMAGE|g" k8s-config/face-matching-signin-deployment.yaml
 
-              # Apply both deployments
+              # Apply both deployments (env vars and tuning are baked into the manifests)
               kubectl apply -f k8s-config/face-matching-signup-deployment.yaml
               kubectl apply -f k8s-config/face-matching-signin-deployment.yaml
 
-              # Runtime tuning for lower latency (register/login)
-              kubectl set env deployment/face-matching-signup \
-                PUBSUB_MAX_MESSAGES=20 \
-                DOWNLOAD_WORKERS=8 \
-                EMBEDDING_WORKERS=2 \
-                SIGNUP_EMBEDDING_WORKERS=2 \
-                SIGNUP_MAX_IMAGES_PER_POSE=1 \
-                EMBEDDING_WARMUP=true
-
-              kubectl set env deployment/face-matching-signin \
-                PUBSUB_MAX_MESSAGES=20 \
-                DOWNLOAD_WORKERS=6 \
-                EMBEDDING_WORKERS=2 \
-                EMBEDDING_ENFORCE_DETECTION=false \
-                SIGNIN_USE_DB_EMBEDDINGS=true \
-                SIGNIN_ALLOW_ON_DEMAND_REGISTERED_EMBEDDINGS=false \
-                SIGNIN_MAX_LOGIN_IMAGES=3 \
-                SIGNIN_DISTANCE_THRESHOLD=0.68 \
-                SIGNIN_PERSONALIZATION_ENABLED=true \
-                SIGNIN_PERSONALIZATION_MAX_EMBEDDINGS=5 \
-                SIGNIN_UPDATE_LOGIN_EMBEDDING=true \
-                EMBEDDING_WARMUP=true
-
-              # Ensure enough worker pods for burst traffic
-              kubectl scale deployment/face-matching-signup --replicas=1
-              kubectl scale deployment/face-matching-signin --replicas=1
-
-              # Use shorter termination grace to reduce rollout stalls on worker pods
-              kubectl patch deployment face-matching-signup --type=merge \
-                -p '{"spec":{"template":{"spec":{"terminationGracePeriodSeconds":30}}}}'
-              kubectl patch deployment face-matching-signin --type=merge \
-                -p '{"spec":{"template":{"spec":{"terminationGracePeriodSeconds":30}}}}'
+              # ── Wait for a GPU node to become Ready before watching rollouts ──
+              echo "Waiting for a GPU node (nvidia-tesla-t4) to become Ready..."
+              GPU_WAIT=0
+              GPU_TIMEOUT=900   # 15 min max for node provisioning
+              while true; do
+                GPU_NODES=$(kubectl get nodes \
+                  -l cloud.google.com/gke-accelerator=nvidia-tesla-t4 \
+                  --no-headers 2>/dev/null | grep -c ' Ready' || echo 0)
+                if [[ "$GPU_NODES" -gt 0 ]]; then
+                  echo "GPU node(s) ready ($GPU_NODES available)."
+                  break
+                fi
+                if [[ "$GPU_WAIT" -ge "$GPU_TIMEOUT" ]]; then
+                  echo "WARNING: No GPU node became Ready within ${GPU_TIMEOUT}s. Continuing anyway..."
+                  kubectl get nodes -o wide || true
+                  break
+                fi
+                sleep 30
+                GPU_WAIT=$((GPU_WAIT + 30))
+                echo "  Still waiting for GPU node... (${GPU_WAIT}s / ${GPU_TIMEOUT}s)"
+              done
 
               wait_rollout() {
                 local deploy="$1"
@@ -147,7 +136,7 @@ jobs:
                 kubectl describe deployment "$deploy" || true
                 kubectl get pods -o wide || true
 
-                # Force-delete stuck terminating pods, then retry rollout status.
+                # Force-delete stuck terminating pods, then retry rollout status
                 terminating_pods="$(kubectl get pods --no-headers 2>/dev/null | awk '$3 == "Terminating" {print $1}')"
                 if [ -n "$terminating_pods" ]; then
                   echo "Force deleting terminating pods: $terminating_pods"
@@ -156,9 +145,9 @@ jobs:
                   done
                 fi
 
-                kubectl rollout status deployment/"$deploy" --timeout=300s
+                kubectl rollout status deployment/"$deploy" --timeout=600s
               }
 
-              # Wait rollouts sequentially to reduce concurrent resource pressure.
-              wait_rollout face-matching-signup 600s
-              wait_rollout face-matching-signin 600s
+              # Wait rollouts sequentially (900s = 15 min each, after GPU node is ready)
+              wait_rollout face-matching-signup 900s
+              wait_rollout face-matching-signin 900s
