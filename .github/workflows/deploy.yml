@@ -101,14 +101,24 @@ jobs:
               kubectl apply -f k8s-config/face-matching-signup-deployment.yaml
               kubectl apply -f k8s-config/face-matching-signin-deployment.yaml
 
+              # ── Helper: count Ready GPU nodes ──
+              count_gpu_nodes() {
+                local raw
+                raw=$(kubectl get nodes -l cloud.google.com/gke-accelerator=nvidia-tesla-t4 \
+                        --no-headers 2>/dev/null) || true
+                if [[ -z "$raw" ]]; then
+                  echo 0
+                else
+                  echo "$raw" | grep -c ' Ready' 2>/dev/null || echo 0
+                fi
+              }
+
               # ── Wait for a GPU node to become Ready before watching rollouts ──
               echo "Waiting for a GPU node (nvidia-tesla-t4) to become Ready..."
               GPU_WAIT=0
               GPU_TIMEOUT=900   # 15 min max for node provisioning
               while true; do
-                GPU_NODES=$(kubectl get nodes \
-                  -l cloud.google.com/gke-accelerator=nvidia-tesla-t4 \
-                  --no-headers 2>/dev/null | grep -c ' Ready' || echo 0)
+                GPU_NODES=$(count_gpu_nodes)
                 if [[ "$GPU_NODES" -gt 0 ]]; then
                   echo "GPU node(s) ready ($GPU_NODES available)."
                   break
@@ -136,18 +146,29 @@ jobs:
                 kubectl describe deployment "$deploy" || true
                 kubectl get pods -o wide || true
 
-                # Force-delete stuck terminating pods, then retry rollout status
-                terminating_pods="$(kubectl get pods --no-headers 2>/dev/null | awk '$3 == "Terminating" {print $1}')"
-                if [ -n "$terminating_pods" ]; then
+                # If the progress deadline was exceeded, restart to reset the timer
+                local progressing
+                progressing=$(kubectl get deployment "$deploy" \
+                  -o jsonpath='{.status.conditions[?(@.type=="Progressing")].reason}' 2>/dev/null) || true
+                if [[ "$progressing" == "ProgressDeadlineExceeded" ]]; then
+                  echo "Progress deadline exceeded for $deploy. Restarting rollout to reset timer..."
+                  kubectl rollout restart deployment/"$deploy"
+                fi
+
+                # Force-delete stuck terminating pods
+                local terminating_pods
+                terminating_pods="$(kubectl get pods --no-headers 2>/dev/null | awk '$3 == "Terminating" {print $1}')" || true
+                if [[ -n "$terminating_pods" ]]; then
                   echo "Force deleting terminating pods: $terminating_pods"
                   for pod in $terminating_pods; do
                     kubectl delete pod "$pod" --grace-period=0 --force || true
                   done
                 fi
 
-                kubectl rollout status deployment/"$deploy" --timeout=600s
+                # Final wait — give another 15 min for the GPU node + pod startup
+                kubectl rollout status deployment/"$deploy" --timeout=900s
               }
 
-              # Wait rollouts sequentially (900s = 15 min each, after GPU node is ready)
+              # Wait rollouts sequentially (900s = 15 min each, after GPU node wait)
               wait_rollout face-matching-signup 900s
               wait_rollout face-matching-signin 900s
