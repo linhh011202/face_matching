@@ -52,6 +52,9 @@ ENV CONFIG_PATH="/app/secrets/config.yaml"
 ENV FIREBASE_CREDENTIALS_PATH="/app/secrets/firebase_credentials.json"
 ENV PATH="/app/.venv/bin:$PATH"
 
+# Force TensorFlow to use CPU only (no CUDA)
+ENV CUDA_VISIBLE_DEVICES=""
+
 # Best-effort warmup to reduce first-request cold start in pods.
 RUN python - <<'PY'
 try:
