@@ -101,38 +101,6 @@ jobs:
               kubectl apply -f k8s-config/face-matching-signup-deployment.yaml
               kubectl apply -f k8s-config/face-matching-signin-deployment.yaml
 
-              # ── Helper: count Ready GPU nodes ──
-              count_gpu_nodes() {
-                local raw
-                raw=$(kubectl get nodes -l cloud.google.com/gke-accelerator=nvidia-tesla-t4 \
-                        --no-headers 2>/dev/null) || true
-                if [[ -z "$raw" ]]; then
-                  echo 0
-                else
-                  echo "$raw" | grep -c ' Ready' 2>/dev/null || echo 0
-                fi
-              }
-
-              # ── Wait for a GPU node to become Ready before watching rollouts ──
-              echo "Waiting for a GPU node (nvidia-tesla-t4) to become Ready..."
-              GPU_WAIT=0
-              GPU_TIMEOUT=900   # 15 min max for node provisioning
-              while true; do
-                GPU_NODES=$(count_gpu_nodes)
-                if [[ "$GPU_NODES" -gt 0 ]]; then
-                  echo "GPU node(s) ready ($GPU_NODES available)."
-                  break
-                fi
-                if [[ "$GPU_WAIT" -ge "$GPU_TIMEOUT" ]]; then
-                  echo "WARNING: No GPU node became Ready within ${GPU_TIMEOUT}s. Continuing anyway..."
-                  kubectl get nodes -o wide || true
-                  break
-                fi
-                sleep 30
-                GPU_WAIT=$((GPU_WAIT + 30))
-                echo "  Still waiting for GPU node... (${GPU_WAIT}s / ${GPU_TIMEOUT}s)"
-              done
-
               wait_rollout() {
                 local deploy="$1"
                 local timeout="$2"
@@ -169,6 +137,9 @@ jobs:
                 kubectl rollout status deployment/"$deploy" --timeout=900s
               }
 
-              # Wait rollouts sequentially (900s = 15 min each, after GPU node wait)
-              wait_rollout face-matching-signup 900s
-              wait_rollout face-matching-signin 900s
+              # Wait rollouts sequentially
+              # GKE Autopilot provisions GPU nodes on-demand when pods request them,
+              # so the first attempt may time out while the node is being created.
+              # The retry after ProgressDeadlineExceeded handles this.
+              wait_rollout face-matching-signup 1200s
+              wait_rollout face-matching-signin 1200s
