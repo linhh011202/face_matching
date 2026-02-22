@@ -112,7 +112,7 @@ jobs:
                 echo "Rollout timed out for $deploy. Collecting diagnostics..."
                 kubectl get deployment "$deploy" -o wide || true
                 kubectl describe deployment "$deploy" || true
-                kubectl get pods -o wide || true
+                kubectl get pods -l app=face-matching -o wide || true
 
                 # If the progress deadline was exceeded, restart to reset the timer
                 local progressing
@@ -133,13 +133,24 @@ jobs:
                   done
                 fi
 
-                # Final wait — give another 15 min for the GPU node + pod startup
-                kubectl rollout status deployment/"$deploy" --timeout=900s
+                # Final wait — give another 10 min for the GPU node + pod startup
+                kubectl rollout status deployment/"$deploy" --timeout=600s
               }
 
-              # Wait rollouts sequentially
-              # GKE Autopilot provisions GPU nodes on-demand when pods request them,
-              # so the first attempt may time out while the node is being created.
-              # The retry after ProgressDeadlineExceeded handles this.
-              wait_rollout face-matching-signup 1200s
-              wait_rollout face-matching-signin 1200s
+              # Wait rollouts in PARALLEL — both pods share the same GPU node,
+              # so once the node is provisioned they become ready near-simultaneously.
+              # This saves ~15-20 min vs waiting sequentially.
+              wait_rollout face-matching-signup 2100s &
+              PID_SIGNUP=$!
+              wait_rollout face-matching-signin 2100s &
+              PID_SIGNIN=$!
+
+              FAIL=0
+              wait $PID_SIGNUP || FAIL=1
+              wait $PID_SIGNIN || FAIL=1
+
+              if [[ $FAIL -ne 0 ]]; then
+                echo "One or more rollouts failed. Final pod status:"
+                kubectl get pods -l app=face-matching -o wide || true
+                exit 1
+              fi
