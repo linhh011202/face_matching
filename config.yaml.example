@@ -1,0 +1,46 @@
+project_name: face_matching
+
+database:
+  user: postgres
+  password: your_db_password
+  db: face_matching
+  host: localhost
+  port: 5432
+
+gcp:
+  project_id: your-gcp-project-id
+
+pubsub:
+  signup_subscription: face-signup-sub
+  signin_subscription: face-signin-sub
+  max_messages: 10
+  ack_deadline_seconds: 600
+
+firebase:
+  credentials_path: /app/secrets/firebase_credentials.json
+  bucket_name: your-bucket-name.appspot.com
+  rtdb_url: https://your-project-id-default-rtdb.asia-southeast1.firebasedatabase.app
+
+embedding:
+  model_name: ArcFace
+  detector_backend: retinaface
+  vector_dimension: 512
+  enforce_detection: true
+  warmup: true
+  workers: 2
+
+temp_dir: /tmp/face_matching
+download_workers: 6
+
+signup:
+  embedding_workers: 2
+  max_images_per_pose: 1
+
+signin:
+  use_db_embeddings: true
+  max_login_images: 3
+  distance_threshold: 0.2
+  allow_on_demand_registered_embeddings: false
+  personalization_enabled: true
+  personalization_max_embeddings: 5
+  update_login_embedding: true

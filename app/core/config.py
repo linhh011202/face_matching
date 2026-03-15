@@ -124,10 +124,7 @@ class Configs:
         os.environ.get("SIGNIN_MAX_LOGIN_IMAGES")
         or _raw.get("signin", {}).get("max_login_images", 3)
     )
-    SIGNIN_DISTANCE_THRESHOLD: float = float(
-        os.environ.get("SIGNIN_DISTANCE_THRESHOLD")
-        or _raw.get("signin", {}).get("distance_threshold", 0.2)
-    )
+    SIGNIN_DISTANCE_THRESHOLD: float = float(0.2)
     SIGNIN_ALLOW_ON_DEMAND_REGISTERED_EMBEDDINGS: bool = _as_bool(
         os.environ.get("SIGNIN_ALLOW_ON_DEMAND_REGISTERED_EMBEDDINGS"),
         _raw.get("signin", {}).get("allow_on_demand_registered_embeddings", False),
