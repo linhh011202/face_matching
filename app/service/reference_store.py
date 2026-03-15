@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 # Model configurations for ensemble
 MODELS = {
-    "ArcFace": {"weight": 0.5, "threshold": 0.68},
+    "ArcFace": {"weight": 0.5, "threshold": 0.2},
     "Facenet512": {"weight": 0.3, "threshold": 0.40},
 }
 

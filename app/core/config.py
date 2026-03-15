@@ -126,7 +126,7 @@ class Configs:
     )
     SIGNIN_DISTANCE_THRESHOLD: float = float(
         os.environ.get("SIGNIN_DISTANCE_THRESHOLD")
-        or _raw.get("signin", {}).get("distance_threshold", 0.68)
+        or _raw.get("signin", {}).get("distance_threshold", 0.2)
     )
     SIGNIN_ALLOW_ON_DEMAND_REGISTERED_EMBEDDINGS: bool = _as_bool(
         os.environ.get("SIGNIN_ALLOW_ON_DEMAND_REGISTERED_EMBEDDINGS"),
