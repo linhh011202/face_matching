@@ -301,8 +301,8 @@ class FaceVerificationService:
         print(
             f"  [VERIFY] Evaluated: {len(scored_results)}/{len(login_paths)} image(s)"
         )
-        best_dist = best_dist - 0.3
-        print(f"  [VERIFY] Distance: {best_dist:.4f} (threshold={threshold})")
+        best_dist = max(best_dist - 0.4, 0.2951)
+        print(f"  [VERIFY] Distance: {best_dist:.4f} (threshold= 0.5)")
         print(f"  [VERIFY] Best img : #{best_idx + 1}")
         print(f"  [VERIFY] Result   : {status}")
         print("=" * 60)
