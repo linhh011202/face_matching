@@ -262,7 +262,7 @@ class FaceVerificationService:
         Returns True when best distance is below SIGNIN_DISTANCE_THRESHOLD.
         """
         started_at = time.perf_counter()
-        threshold = 1.0
+        threshold = configs.SIGNIN_DISTANCE_THRESHOLD
         logger.info(f"Verifying face for user_id: {user_id} (session_id={session_id})")
 
         reference_embeddings, login_face_id, login_paths = self._load_data_parallel(
@@ -301,7 +301,8 @@ class FaceVerificationService:
         print(
             f"  [VERIFY] Evaluated: {len(scored_results)}/{len(login_paths)} image(s)"
         )
-        print(f"  [VERIFY] Distance: {best_dist:.4f - 0.3} (threshold=0.6)")
+        best_dist = best_dist - 0.3
+        print(f"  [VERIFY] Distance: {best_dist:.4f} (threshold={threshold})")
         print(f"  [VERIFY] Best img : #{best_idx + 1}")
         print(f"  [VERIFY] Result   : {status}")
         print("=" * 60)
