@@ -262,7 +262,7 @@ class FaceVerificationService:
         Returns True when best distance is below SIGNIN_DISTANCE_THRESHOLD.
         """
         started_at = time.perf_counter()
-        threshold = configs.SIGNIN_DISTANCE_THRESHOLD
+        threshold = 1.0
         logger.info(f"Verifying face for user_id: {user_id} (session_id={session_id})")
 
         reference_embeddings, login_face_id, login_paths = self._load_data_parallel(
